@@ -1,0 +1,188 @@
+# WatchFlow Example Configuration
+# This demonstrates all available features and options
+
+version: 1
+project_name: "example-project"
+project_type: python
+
+# Global settings apply to all watchers
+global:
+  # UI theme: pro (default), minimal, neon, auto
+  theme: pro
+  
+  # Stop on first command failure
+  fail_fast: false
+  
+  # Maximum number of commands to run in parallel
+  max_parallel_commands: 4
+  
+  # Logging level: DEBUG, INFO, WARNING, ERROR
+  log_level: INFO
+
+# Define multiple watchers for different file types
+watchers:
+  # Python source code watcher
+  - name: python-source-watcher
+    # Paths to watch (can be files or directories)
+    paths:
+      - src
+      - tests
+    
+    # Watch subdirectories recursively
+    recursive: true
+    
+    # Include only these file patterns (optional)
+    patterns:
+      - "*.py"
+    
+    # Ignore these patterns (optional)
+    ignore_patterns:
+      - "__pycache__"
+      - "*.pyc"
+      - ".pytest_cache"
+      - ".venv"
+      - "venv"
+    
+    # Debounce time in milliseconds (prevent duplicate runs)
+    debounce: 100
+    
+    # Run commands in parallel (default: false)
+    parallel: false
+    
+    # Commands to execute when files change
+    commands:
+      # Format code with Black
+      - name: format-code
+        cmd: ["black", "{{path}}"]
+        timeout: 30
+        retries: 0
+      
+      # Run linter
+      - name: lint-code
+        cmd: ["ruff", "check", "{{path}}"]
+        timeout: 60
+        retries: 1
+        retry_strategy: fixed
+      
+      # Type checking
+      - name: type-check
+        cmd: ["mypy", "src"]
+        timeout: 120
+        retries: 0
+        working_dir: "."
+      
+      # Run tests
+      - name: run-tests
+        cmd: ["pytest", "-v"]
+        timeout: 300
+        retries: 0
+
+  # Documentation watcher
+  - name: docs-watcher
+    paths:
+      - docs
+    recursive: true
+    patterns:
+      - "*.md"
+      - "*.rst"
+    debounce: 200
+    commands:
+      - name: build-docs
+        cmd: ["make", "html"]
+        working_dir: "docs"
+        timeout: 60
+
+  # Configuration files watcher
+  - name: config-watcher
+    paths:
+      - .
+    recursive: false
+    patterns:
+      - "*.yaml"
+      - "*.toml"
+      - "*.json"
+    debounce: 500
+    commands:
+      - name: validate-config
+        cmd: ["watchflow", "validate"]
+        timeout: 10
+
+  # Advanced example with conditional execution
+  - name: build-watcher
+    paths:
+      - src
+    patterns:
+      - "*.py"
+    commands:
+      # Only run if build output exists
+      - name: deploy
+        cmd: ["./deploy.sh"]
+        skip_until_exists: "dist/bundle.js"
+        timeout: 120
+      
+      # Only run if specific files changed
+      - name: update-api-docs
+        cmd: ["./generate-api-docs.sh"]
+        only_if_changed:
+          - "src/api/*.py"
+        timeout: 60
+
+  # Parallel execution example
+  - name: multi-task-watcher
+    paths:
+      - src
+    patterns:
+      - "*.py"
+    parallel: true  # All commands run simultaneously
+    commands:
+      - name: quick-lint
+        cmd: ["ruff", "check", "{{path}}"]
+      
+      - name: quick-test
+        cmd: ["pytest", "{{path}}"]
+      
+      - name: security-check
+        cmd: ["bandit", "-r", "{{path}}"]
+
+  # Example with retry strategies
+  - name: integration-tests-watcher
+    paths:
+      - tests/integration
+    commands:
+      # Fixed retry: 1 second between attempts
+      - name: integration-tests
+        cmd: ["pytest", "tests/integration", "-v"]
+        timeout: 600
+        retries: 3
+        retry_strategy: fixed
+      
+      # Exponential backoff: 1s, 2s, 4s, 8s
+      - name: api-sync
+        cmd: ["./sync-external-api.sh"]
+        timeout: 300
+        retries: 4
+        retry_strategy: exponential
+
+  # Template variables example
+  - name: template-example-watcher
+    paths:
+      - data
+    patterns:
+      - "*.csv"
+      - "*.json"
+    commands:
+      # Use {{path}} for single file
+      - name: process-file
+        cmd: ["python", "process.py", "{{path}}"]
+      
+      # Use {{paths}} for all changed files
+      - name: batch-process
+        cmd: ["./batch.sh", "{{paths}}"]
+      
+      # Use {{event}} for event type
+      - name: log-event
+        cmd: ["echo", "{{event}} detected at {{timestamp}}"]
+      
+      # Use {{watcher}} for watcher name
+      - name: notify
+        cmd: ["./notify.sh", "{{watcher}}", "{{path}}"]

@@ -1,0 +1,34 @@
+# Simple Python Project Configuration
+# This is a minimal example for getting started
+
+version: 1
+project_name: "my-python-project"
+project_type: python
+
+global:
+  theme: pro
+  fail_fast: false
+  max_parallel_commands: 4
+
+watchers:
+  - name: python-watcher
+    paths:
+      - src
+      - tests
+    recursive: true
+    patterns:
+      - "*.py"
+    ignore_patterns:
+      - "__pycache__"
+      - "*.pyc"
+      - ".venv"
+      - "venv"
+    debounce: 100
+    commands:
+      - name: format-code
+        cmd: ["black", "."]
+        timeout: 30
+      
+      - name: run-tests
+        cmd: ["pytest", "-v"]
+        timeout: 300
