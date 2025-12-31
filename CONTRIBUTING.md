@@ -10,7 +10,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.12 or higher
 - Git
 - pip
 

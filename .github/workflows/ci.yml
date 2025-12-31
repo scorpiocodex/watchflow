@@ -31,11 +31,11 @@ jobs:
       run: |
         black --check src/watchflow tests
         ruff check src/watchflow tests
-        mypy src/watchflow
+        mypy src/watchflow --ignore-missing-imports
 
     - name: Run tests with coverage
       run: |
-        pytest --cov=src/watchflow --cov-report=xml --cov-report=term
+        pytest --cov=src/watchflow --cov-report=xml --cov-report=term --cov-fail-under=80
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4

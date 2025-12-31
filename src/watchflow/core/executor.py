@@ -308,7 +308,10 @@ class CommandExecutor:
 
         if use_shell:
             # Convert list to string for shell execution on Windows
-            cmd_str = " ".join(cmd_list)
+            # Note: Commands come from trusted configuration files.
+            # Windows cmd.exe doesn't support POSIX-style quoting (shlex.quote),
+            # so we use subprocess.list2cmdline which handles Windows escaping.
+            cmd_str = subprocess.list2cmdline(cmd_list)
             process = await asyncio.create_subprocess_shell(
                 cmd_str,
                 stdout=asyncio.subprocess.PIPE,
