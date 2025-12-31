@@ -2,14 +2,10 @@
 
 import asyncio
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from watchflow.core.executor import (
     CommandExecutor,
-    ExecutionResult,
     find_command,
     validate_command,
 )
@@ -283,7 +279,9 @@ class TestExceptionHierarchy:
         ]
 
         for exc in exceptions:
-            assert isinstance(exc, WatchFlowError), f"{type(exc)} should inherit from WatchFlowError"
+            assert isinstance(
+                exc, WatchFlowError
+            ), f"{type(exc)} should inherit from WatchFlowError"
 
 
 class TestUISpinner:
@@ -292,11 +290,13 @@ class TestUISpinner:
     def test_command_spinner_context_exists(self):
         """Test that CommandSpinnerContext class exists."""
         from watchflow.ui.renderer import CommandSpinnerContext
+
         assert CommandSpinnerContext is not None
 
     def test_ui_renderer_has_spinner_method(self):
         """Test that UIRenderer has command_spinner method."""
         from watchflow.ui.renderer import UIRenderer
+
         renderer = UIRenderer(theme_name="minimal")
         assert hasattr(renderer, "command_spinner")
         assert callable(renderer.command_spinner)

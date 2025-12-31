@@ -2,7 +2,6 @@
 
 import asyncio
 
-import pytest
 
 from tests.test_utils import (
     get_echo_command,
