@@ -1,6 +1,7 @@
 """Command execution engine."""
 
 import asyncio
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -11,6 +12,60 @@ from watchflow.utils.logger import get_logger
 from watchflow.utils.templates import TemplateEngine
 
 logger = get_logger(__name__)
+
+
+class CommandNotFoundError(Exception):
+    """Raised when a command executable is not found."""
+
+    def __init__(self, command: str, search_paths: Optional[list[str]] = None):
+        """Initialize error.
+
+        Args:
+            command: The command that was not found
+            search_paths: Paths that were searched (optional)
+        """
+        self.command = command
+        self.search_paths = search_paths or []
+        super().__init__(f"Command not found: {command}")
+
+
+def find_command(cmd: str) -> Optional[str]:
+    """Find command executable in PATH.
+
+    Args:
+        cmd: Command name to find
+
+    Returns:
+        Full path to executable if found, None otherwise
+    """
+    return shutil.which(cmd)
+
+
+def validate_command(cmd_list: list[str]) -> tuple[bool, Optional[str]]:
+    """Validate that a command exists and can be executed.
+
+    Args:
+        cmd_list: Command and arguments
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not cmd_list:
+        return False, "Empty command"
+
+    cmd = cmd_list[0]
+
+    # Check if it's a path
+    if "/" in cmd or "\\" in cmd:
+        if Path(cmd).exists():
+            return True, None
+        return False, f"Command path not found: {cmd}"
+
+    # Check if it's in PATH
+    if find_command(cmd):
+        return True, None
+
+    return False, f"Command not found in PATH: {cmd}"
 
 
 class ExecutionResult:
@@ -41,13 +96,15 @@ class ExecutionResult:
 class CommandExecutor:
     """Executes commands with retry logic and timeouts."""
 
-    def __init__(self, max_parallel: int = 4):
+    def __init__(self, max_parallel: int = 4, validate_commands: bool = True):
         """Initialize executor.
 
         Args:
             max_parallel: Maximum number of parallel executions
+            validate_commands: Whether to validate command existence before execution
         """
         self.max_parallel = max_parallel
+        self.validate_commands = validate_commands
         self.semaphore = asyncio.Semaphore(max_parallel)
 
     async def execute_command(
@@ -83,6 +140,26 @@ class CommandExecutor:
 
             # Substitute template variables
             cmd_list = TemplateEngine.substitute_list(command.cmd, template_vars)
+
+            # Validate command exists (skip on Windows where shell=True handles it)
+            import sys
+
+            if self.validate_commands and sys.platform != "win32":
+                is_valid, error = validate_command(cmd_list)
+                if not is_valid:
+                    duration = time.time() - start_time
+                    logger.warning(
+                        "command_not_found",
+                        command=command.name,
+                        error=error,
+                    )
+                    return ExecutionResult(
+                        command_name=command.name,
+                        success=False,
+                        duration=duration,
+                        return_code=-1,
+                        stderr=error or "Command not found",
+                    )
 
             # Execute with retries
             for attempt in range(command.retries + 1):

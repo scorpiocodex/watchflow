@@ -1,5 +1,6 @@
 """Tests for configuration models and validation."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,12 @@ from watchflow.config import (
     RetryStrategy,
     UITheme,
     Watcher,
+    expand_env_vars,
+)
+from watchflow.exceptions import (
+    ConfigNotFoundError,
+    ConfigSyntaxError,
+    ConfigValidationError,
 )
 
 
@@ -233,15 +240,16 @@ watchers:
 
     def test_load_nonexistent_file_fails(self):
         """Test loading nonexistent file fails."""
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(ConfigNotFoundError) as exc_info:
             ConfigValidator.load_config(Path("/nonexistent.yaml"))
+        assert "nonexistent.yaml" in str(exc_info.value.path)
 
     def test_load_invalid_yaml_fails(self, tmp_path):
         """Test loading invalid YAML fails."""
         config_path = tmp_path / "invalid.yaml"
         config_path.write_text("invalid: yaml: content:")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigSyntaxError):
             ConfigValidator.load_config(config_path)
 
     def test_load_empty_file_fails(self, tmp_path):
@@ -249,8 +257,9 @@ watchers:
         config_path = tmp_path / "empty.yaml"
         config_path.write_text("")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigValidationError) as exc_info:
             ConfigValidator.load_config(config_path)
+        assert "empty" in exc_info.value.errors[0].lower()
 
     def test_save_config(self, tmp_path):
         """Test saving configuration."""
@@ -302,3 +311,114 @@ watchers:
         is_valid, errors = ConfigValidator.validate_config_dict(data)
         assert not is_valid
         assert len(errors) > 0
+
+
+class TestEnvironmentVariableExpansion:
+    """Tests for environment variable expansion in configuration."""
+
+    def test_expand_simple_env_var(self, monkeypatch):
+        """Test simple environment variable expansion."""
+        monkeypatch.setenv("TEST_VAR", "hello")
+        result = expand_env_vars("${TEST_VAR}")
+        assert result == "hello"
+
+    def test_expand_env_var_with_default(self, monkeypatch):
+        """Test environment variable with default value."""
+        # When env var exists, use it
+        monkeypatch.setenv("EXISTING_VAR", "value")
+        result = expand_env_vars("${EXISTING_VAR:-default}")
+        assert result == "value"
+
+        # When env var doesn't exist, use default
+        monkeypatch.delenv("NONEXISTENT_VAR", raising=False)
+        result = expand_env_vars("${NONEXISTENT_VAR:-default_value}")
+        assert result == "default_value"
+
+    def test_expand_env_var_in_string(self, monkeypatch):
+        """Test environment variable in middle of string."""
+        monkeypatch.setenv("NAME", "world")
+        result = expand_env_vars("hello ${NAME}!")
+        assert result == "hello world!"
+
+    def test_expand_multiple_env_vars(self, monkeypatch):
+        """Test multiple environment variables in same string."""
+        monkeypatch.setenv("FIRST", "1")
+        monkeypatch.setenv("SECOND", "2")
+        result = expand_env_vars("${FIRST} and ${SECOND}")
+        assert result == "1 and 2"
+
+    def test_expand_env_vars_in_list(self, monkeypatch):
+        """Test environment variable expansion in lists."""
+        monkeypatch.setenv("CMD", "python")
+        result = expand_env_vars(["${CMD}", "script.py"])
+        assert result == ["python", "script.py"]
+
+    def test_expand_env_vars_in_dict(self, monkeypatch):
+        """Test environment variable expansion in dictionaries."""
+        monkeypatch.setenv("PROJECT", "myproject")
+        data = {
+            "name": "${PROJECT}",
+            "version": 1,
+        }
+        result = expand_env_vars(data)
+        assert result["name"] == "myproject"
+        assert result["version"] == 1
+
+    def test_expand_nested_structures(self, monkeypatch):
+        """Test environment variable expansion in nested structures."""
+        monkeypatch.setenv("HOST", "localhost")
+        monkeypatch.setenv("PORT", "8080")
+        data = {
+            "servers": [
+                {"host": "${HOST}", "port": "${PORT}"},
+            ],
+        }
+        result = expand_env_vars(data)
+        assert result["servers"][0]["host"] == "localhost"
+        assert result["servers"][0]["port"] == "8080"
+
+    def test_unexpanded_var_without_default(self, monkeypatch):
+        """Test that undefined vars without defaults stay as-is."""
+        monkeypatch.delenv("UNDEFINED_VAR", raising=False)
+        result = expand_env_vars("${UNDEFINED_VAR}")
+        assert result == "${UNDEFINED_VAR}"
+
+    def test_load_config_with_env_vars(self, tmp_path, monkeypatch):
+        """Test loading configuration with environment variables."""
+        monkeypatch.setenv("PROJECT_NAME", "env-test-project")
+        config_path = tmp_path / "config.yaml"
+        config_content = f"""
+version: 1
+project_name: ${{PROJECT_NAME}}
+watchers:
+  - name: test-watcher
+    paths:
+      - {tmp_path}
+    commands:
+      - name: test-cmd
+        cmd: ["echo", "hello"]
+"""
+        config_path.write_text(config_content)
+
+        config = ConfigValidator.load_config(config_path)
+        assert config.project_name == "env-test-project"
+
+    def test_load_config_without_env_expansion(self, tmp_path, monkeypatch):
+        """Test loading configuration with env expansion disabled."""
+        monkeypatch.setenv("PROJECT_NAME", "should-not-expand")
+        config_path = tmp_path / "config.yaml"
+        config_content = f"""
+version: 1
+project_name: "${{PROJECT_NAME}}"
+watchers:
+  - name: test-watcher
+    paths:
+      - {tmp_path}
+    commands:
+      - name: test-cmd
+        cmd: ["echo", "hello"]
+"""
+        config_path.write_text(config_content)
+
+        config = ConfigValidator.load_config(config_path, expand_env=False)
+        assert config.project_name == "${PROJECT_NAME}"

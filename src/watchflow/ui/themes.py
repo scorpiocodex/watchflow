@@ -8,6 +8,38 @@ from rich.console import Console
 from rich.theme import Theme as RichTheme
 
 
+def _can_display_emoji() -> bool:
+    """Check if the terminal can display emoji.
+
+    Returns:
+        True if emoji can be displayed, False otherwise
+    """
+    # On Windows, check if we're using Windows Terminal or a modern console
+    if sys.platform == "win32":
+        # Windows Terminal sets WT_SESSION
+        if os.getenv("WT_SESSION"):
+            return True
+        # VS Code terminal
+        if os.getenv("TERM_PROGRAM") == "vscode":
+            return True
+        # ConEmu/Cmder
+        if os.getenv("ConEmuANSI") == "ON":
+            return True
+        # Default Windows console doesn't support emoji well
+        return False
+
+    # On Unix-like systems, check TERM
+    term = os.getenv("TERM", "")
+    if "xterm" in term or "screen" in term or "tmux" in term or "256color" in term:
+        return True
+
+    # Check if stdout is a TTY
+    if not sys.stdout.isatty():
+        return False
+
+    return True
+
+
 @dataclass
 class ThemeConfig:
     """Theme configuration."""
@@ -111,7 +143,21 @@ class Themes:
             "neon": cls.NEON,
         }
 
-        return themes.get(theme_name.lower(), cls.PRO)
+        theme = themes.get(theme_name.lower(), cls.PRO)
+
+        # If the selected theme uses emoji but terminal doesn't support it,
+        # return a version with emoji disabled
+        if theme.use_emoji and not _can_display_emoji():
+            return ThemeConfig(
+                name=theme.name,
+                use_emoji=False,
+                use_icons=theme.use_icons,
+                use_panels=theme.use_panels,
+                use_colors=theme.use_colors,
+                rich_theme=theme.rich_theme,
+            )
+
+        return theme
 
     @classmethod
     def _detect_theme(cls) -> ThemeConfig:
@@ -136,14 +182,28 @@ class Themes:
         if not console.color_system:
             return cls.MINIMAL
 
-        # Check for emoji support (rough heuristic)
-        term = os.getenv("TERM", "")
-        if "xterm" in term or "screen" in term or "tmux" in term:
-            # Modern terminals usually support emoji
+        # Check for emoji support
+        if _can_display_emoji():
             return cls.PRO
 
-        # Default to minimal if unsure
-        return cls.MINIMAL
+        # Return PRO theme but with emoji disabled for Windows legacy console
+        return cls._get_safe_pro_theme()
+
+    @classmethod
+    def _get_safe_pro_theme(cls) -> ThemeConfig:
+        """Get PRO theme with emoji disabled for terminals that don't support it.
+
+        Returns:
+            ThemeConfig with colors but no emoji
+        """
+        return ThemeConfig(
+            name="pro",
+            use_emoji=False,  # Disable emoji for compatibility
+            use_icons=True,
+            use_panels=True,
+            use_colors=True,
+            rich_theme=cls.PRO.rich_theme,
+        )
 
 
 class Icons:

@@ -5,6 +5,36 @@ All notable changes to WatchFlow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1] - 2025-12-31
+
+### Added
+
+- **Environment Variable Expansion**: Support for `${VAR}` and `${VAR:-default}` syntax in YAML configs
+- **Hash-Based Change Detection**: Skip command execution when file content hasn't actually changed
+- **Progress Spinner**: Visual feedback for long-running commands with the `command_spinner` context manager
+- **Command Existence Validation**: Validates commands exist before attempting execution
+- **Hot-Reload Configuration**: Automatically detects and reloads configuration file changes
+- **Custom Exception Hierarchy**: New `exceptions.py` module with specific exception classes:
+  - `WatchFlowError` (base), `ConfigNotFoundError`, `ConfigValidationError`, `ConfigSyntaxError`
+  - `CommandNotFoundError`, `CommandTimeoutError`, `CommandExecutionError`
+  - `WatchPathNotFoundError`, `WatcherStartError`
+  - `EngineAlreadyRunningError`, `EngineNotRunningError`
+- **Version Flag**: `--version` / `-v` flag to display version
+- **Windows UTF-8 Support**: Automatic UTF-8 encoding configuration for Windows Terminal
+
+### Changed
+
+- **Improved Theme Detection**: Better detection of terminal capabilities for emoji support
+- **Enhanced CLI Help**: Rich formatting with quick start guide in help output
+- **Updated Test Suite**: Expanded from 44 to 152+ tests
+
+### Fixed
+
+- **Windows Emoji Display**: Fixed Unicode encoding errors on Windows legacy console
+- **Auto Theme Selection**: Properly falls back to ASCII when emojis can't be displayed
+
+---
+
 ## [1.0] - 2025-01-20
 
 ### Added
@@ -85,7 +115,6 @@ This is the first production-ready release of WatchFlow, designed for profession
 Future releases may include:
 
 - DAG-based command dependencies
-- Hot-reload configuration
 - Plugin system
 - Remote execution agents
 - Web dashboard

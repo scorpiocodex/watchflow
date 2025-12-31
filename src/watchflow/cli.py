@@ -6,21 +6,64 @@ from pathlib import Path
 from typing import Optional
 
 import typer
+from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
 from watchflow import __version__
 from watchflow.config import ConfigValidator, UITheme
 from watchflow.core.engine import WatchFlowEngine
 from watchflow.detection import ProjectDetector, ToolDetector
+from watchflow.exceptions import (
+    ConfigNotFoundError,
+    ConfigSyntaxError,
+    ConfigValidationError,
+    WatchFlowError,
+)
 from watchflow.ui.renderer import UIRenderer
 from watchflow.utils.logger import setup_logging
 from watchflow.utils.templates import CONFIG_TEMPLATES, TemplateEngine
 
+
+def version_callback(value: bool) -> None:
+    """Print version and exit."""
+    if value:
+        console = Console()
+        console.print(f"[bold cyan]WatchFlow[/bold cyan] version [bold]{__version__}[/bold]")
+        raise typer.Exit()
+
+
 app = typer.Typer(
     name="watchflow",
-    help="Next-Generation Intelligent File Watcher & Automation CLI",
+    help="""
+[bold cyan]WatchFlow[/bold cyan] - Next-Generation Intelligent File Watcher & Automation CLI
+
+Watch files for changes and automatically execute commands. Supports multiple
+languages with intelligent project detection.
+
+[bold]Quick Start:[/bold]
+  watchflow init    - Initialize configuration for your project
+  watchflow run     - Start watching files and executing commands
+
+[bold]Documentation:[/bold] https://github.com/yourusername/watchflow
+    """,
     add_completion=False,
+    rich_markup_mode="rich",
 )
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-v",
+        help="Show version and exit",
+        callback=version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """WatchFlow - Watch files and automate your workflow."""
+    pass
 
 
 @app.command()
@@ -47,7 +90,7 @@ def init(
 
     Automatically detects project type and generates optimized configuration.
     """
-    ui = UIRenderer(theme_name="pro")
+    ui = UIRenderer(theme_name="auto")
     ui.print_banner(__version__)
 
     project_root = Path.cwd()
@@ -146,7 +189,7 @@ def init(
     config_path.write_text(config_content, encoding="utf-8")
     ui.print_config_created(str(config_path))
 
-    ui.print_info("\n✨ Next steps:")
+    ui.print_info("\nNext steps:")
     ui.print_info(f"  1. Review and customize {config_path}")
     ui.print_info("  2. Run: watchflow run")
 
@@ -187,12 +230,19 @@ def run(
     # Load configuration
     try:
         config = ConfigValidator.load_config(config_file)
-    except FileNotFoundError:
-        print(f"Error: Configuration file not found: {config_file}")
+    except ConfigNotFoundError as e:
+        print(f"Error: {e.message}")
         print("Run 'watchflow init' to create one.")
         raise typer.Exit(1)
-    except ValueError as e:
-        print(f"Error: {e}")
+    except ConfigSyntaxError as e:
+        print(f"Error: {e.message}")
+        if e.line:
+            print(f"  Line: {e.line}")
+        raise typer.Exit(1)
+    except ConfigValidationError as e:
+        print(f"Error: {e.message}")
+        for error in e.errors:
+            print(f"  - {error}")
         raise typer.Exit(1)
 
     # Override theme if specified
@@ -215,10 +265,13 @@ def run(
 
     # Create and start engine
     project_root = config_file.parent if config_file.parent != Path() else Path.cwd()
+    config_file_abs = config_file.resolve()
     engine = WatchFlowEngine(
         config=config,
         project_root=project_root,
         ui_renderer=ui,
+        config_path=config_file_abs,
+        enable_hot_reload=True,
     )
 
     # Run engine
@@ -226,8 +279,14 @@ def run(
         asyncio.run(engine.start())
     except KeyboardInterrupt:
         pass
+    except WatchFlowError as e:
+        ui.print_error(f"Error: {e.message}")
+        if debug and e.details:
+            for key, value in e.details.items():
+                ui.print_error(f"  {key}: {value}")
+        raise typer.Exit(1)
     except Exception as e:
-        ui.print_error(f"Fatal error: {e}")
+        ui.print_error(f"Unexpected error: {e}")
         if debug:
             raise
         raise typer.Exit(1)
@@ -245,27 +304,30 @@ def validate(
     Checks your WatchFlow configuration for errors and provides
     detailed feedback on any issues.
     """
-    ui = UIRenderer(theme_name="pro")
-
-    if not config_file.exists():
-        ui.print_error(f"Configuration file not found: {config_file}")
-        raise typer.Exit(1)
+    ui = UIRenderer(theme_name="auto")
 
     try:
         config = ConfigValidator.load_config(config_file)
-        ui.print_info(f"✅ Configuration is valid: {config_file}")
+        ui.print_info(f"Configuration is valid: {config_file}")
         ui.print_info(f"   Project: {config.project_name or 'unnamed'}")
         ui.print_info(f"   Watchers: {len(config.watchers)}")
 
         total_commands = sum(len(w.commands) for w in config.watchers)
         ui.print_info(f"   Commands: {total_commands}")
 
-    except ValueError as e:
+    except ConfigNotFoundError as e:
+        ui.print_error(e.message)
+        raise typer.Exit(1)
+    except ConfigSyntaxError as e:
+        ui.print_error("Configuration syntax error:")
+        ui.print_error(f"  {e.message}")
+        if e.line:
+            ui.print_error(f"  Line: {e.line}")
+        raise typer.Exit(1)
+    except ConfigValidationError as e:
         ui.print_error("Configuration validation failed:")
-        error_lines = str(e).split("\n")
-        for line in error_lines:
-            if line.strip():
-                ui.print_error(f"  • {line}")
+        for error in e.errors:
+            ui.print_error(f"  - {error}")
         raise typer.Exit(1)
 
 
@@ -276,7 +338,7 @@ def info() -> None:
     Shows details about your system, Python environment, and
     WatchFlow installation.
     """
-    ui = UIRenderer(theme_name="pro")
+    ui = UIRenderer(theme_name="auto")
     ui.print_banner(__version__)
 
     from rich.table import Table

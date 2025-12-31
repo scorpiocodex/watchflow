@@ -33,23 +33,28 @@ WatchFlow is a production-ready, cross-platform intelligent file watcher and aut
 - **Async file watching** across Linux, macOS, and Windows
 - **Parallel command execution** with configurable concurrency limits
 - **Intelligent debouncing** (0-60000ms) to prevent duplicate runs
+- **Hash-based change detection** to skip unchanged files
 - **Smart test skipping** when no tests exist
 - **Retry strategies**: Fixed and exponential backoff
+- **Command validation** before execution
 
 ### ⚙️ **Flexible Configuration**
 
 - **YAML-based** with full Pydantic validation
+- **Environment variable expansion**: `${VAR}` and `${VAR:-default}` syntax
+- **Hot-reload**: Configuration changes are detected automatically
 - **Template variables**: `{{path}}`, `{{paths}}`, `{{event}}`, `{{timestamp}}`, `{{watcher}}`
 - **Conditional execution**: `skip_until_exists`, `only_if_changed`
 - **Per-command settings**: timeout, retries, working directory
 
 ### 🛡️ **Production Ready**
 
-- **91%+ test coverage** with 44+ comprehensive tests
+- **152+ tests** with comprehensive coverage
 - **Full type safety** with mypy
+- **Custom exception hierarchy** for precise error handling
 - **Structured logging** via structlog
 - **Graceful shutdown** handling SIGINT/SIGTERM
-- **Error recovery** with detailed reporting
+- **Cross-platform** Windows, macOS, and Linux support
 
 ---
 
@@ -254,6 +259,26 @@ Available variables:
 - `{{timestamp}}` - ISO 8601 timestamp
 - `{{watcher}}` - Watcher name
 
+### Environment Variables
+
+Use environment variables in your configuration with the `${VAR}` syntax:
+
+```yaml
+version: 1
+project_name: "${PROJECT_NAME:-my-project}"
+
+watchers:
+  - name: main-watcher
+    paths: ["${SOURCE_DIR:-src}"]
+    commands:
+      - name: deploy
+        cmd: ["./deploy.sh", "--env", "${DEPLOY_ENV:-development}"]
+```
+
+**Syntax:**
+- `${VAR}` - Use environment variable value (keeps original if not set)
+- `${VAR:-default}` - Use default value if variable is not set
+
 ---
 
 ## 🎯 Examples
@@ -443,19 +468,20 @@ WatchFlow is built with a clean, modular architecture:
 ```bash
 watchflow/
 ├── cli.py              # CLI interface (Typer)
+├── exceptions.py       # Custom exception hierarchy
 ├── core/
-│   ├── engine.py       # Main orchestration
-│   ├── watcher.py      # File system watching
-│   └── executor.py     # Command execution
+│   ├── engine.py       # Main orchestration with hot-reload
+│   ├── watcher.py      # File system watching with hash detection
+│   └── executor.py     # Command execution with validation
 ├── config/
 │   ├── models.py       # Pydantic models
-│   └── validator.py    # Config validation
+│   └── validator.py    # Config validation with env expansion
 ├── detection/
 │   ├── detector.py     # Project detection
 │   └── tools.py        # Tool checking
 ├── ui/
-│   ├── renderer.py     # UI rendering
-│   └── themes.py       # Theme definitions
+│   ├── renderer.py     # UI rendering with progress spinners
+│   └── themes.py       # Theme definitions with auto-detection
 └── utils/
     ├── logging.py      # Structured logging
     └── templates.py    # Template engine
@@ -502,11 +528,11 @@ make clean
 
 WatchFlow has comprehensive test coverage:
 
-- ✅ **91%+ coverage**
-- ✅ **44+ tests**
+- ✅ **152+ tests** covering all features
 - ✅ **Unit tests** for all components
 - ✅ **Integration tests** for workflows
 - ✅ **Type safety** with mypy
+- ✅ **Cross-platform** testing on Windows, macOS, Linux
 
 ```bash
 # Run tests

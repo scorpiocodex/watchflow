@@ -2,6 +2,7 @@
 
 import asyncio
 import fnmatch
+import hashlib
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -14,6 +15,26 @@ from watchflow.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def compute_file_hash(path: str) -> Optional[str]:
+    """Compute MD5 hash of a file for change detection.
+
+    Args:
+        path: Path to the file
+
+    Returns:
+        MD5 hash string or None if file cannot be read
+    """
+    try:
+        with open(path, "rb") as f:
+            # Read in chunks for large files
+            hasher = hashlib.md5()
+            for chunk in iter(lambda: f.read(8192), b""):
+                hasher.update(chunk)
+            return hasher.hexdigest()
+    except (OSError, IOError):
+        return None
+
+
 class WatcherEventHandler(FileSystemEventHandler):
     """Handles file system events from watchdog."""
 
@@ -22,6 +43,7 @@ class WatcherEventHandler(FileSystemEventHandler):
         watcher_config: WatcherConfig,
         callback: Callable[[str, list[str], str], None],
         debounce_ms: int = 100,
+        use_hash_detection: bool = True,
     ):
         """Initialize event handler.
 
@@ -29,12 +51,15 @@ class WatcherEventHandler(FileSystemEventHandler):
             watcher_config: Watcher configuration
             callback: Callback function(event_type, paths, watcher_name)
             debounce_ms: Debounce time in milliseconds
+            use_hash_detection: Whether to use hash-based change detection
         """
         super().__init__()
         self.watcher_config = watcher_config
         self.callback = callback
         self.debounce_ms = debounce_ms
+        self.use_hash_detection = use_hash_detection
         self.pending_events: dict[str, float] = {}
+        self.file_hashes: dict[str, str] = {}  # Cache of file hashes
         self.event_loop: Optional[asyncio.AbstractEventLoop] = None
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -80,6 +105,16 @@ class WatcherEventHandler(FileSystemEventHandler):
         if hasattr(event, "event_type"):
             event_type = str(event.event_type)
 
+        # Hash-based change detection for modified events
+        if self.use_hash_detection and event_type == "modified":
+            if not self._has_content_changed(path):
+                logger.debug(
+                    "file_unchanged",
+                    watcher=self.watcher_config.name,
+                    path=path,
+                )
+                return
+
         logger.debug(
             "file_event",
             watcher=self.watcher_config.name,
@@ -93,6 +128,29 @@ class WatcherEventHandler(FileSystemEventHandler):
                 self._async_callback(event_type, [path]),
                 self.event_loop,
             )
+
+    def _has_content_changed(self, path: str) -> bool:
+        """Check if file content has actually changed using hash comparison.
+
+        Args:
+            path: Path to the file
+
+        Returns:
+            True if content changed or cannot be determined, False otherwise
+        """
+        new_hash = compute_file_hash(path)
+        if new_hash is None:
+            # File might be deleted or inaccessible, treat as changed
+            return True
+
+        old_hash = self.file_hashes.get(path)
+        self.file_hashes[path] = new_hash
+
+        if old_hash is None:
+            # First time seeing this file
+            return True
+
+        return old_hash != new_hash
 
     async def _async_callback(self, event_type: str, paths: list[str]) -> None:
         """Async wrapper for callback.

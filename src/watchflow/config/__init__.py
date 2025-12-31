@@ -8,7 +8,7 @@ from watchflow.config.models import (
     UITheme,
     Watcher,
 )
-from watchflow.config.validator import ConfigValidator
+from watchflow.config.validator import ConfigValidator, expand_env_vars
 
 __all__ = [
     "Command",
@@ -18,4 +18,5 @@ __all__ = [
     "RetryStrategy",
     "UITheme",
     "Watcher",
+    "expand_env_vars",
 ]

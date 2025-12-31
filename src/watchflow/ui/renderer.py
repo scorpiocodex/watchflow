@@ -1,11 +1,15 @@
 """UI rendering for WatchFlow."""
 
 import shutil
+import sys
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Optional
+from typing import Generator, Optional
 
 from rich.console import Console
+from rich.live import Live
 from rich.panel import Panel
+from rich.spinner import Spinner
 from rich.table import Table
 from rich.text import Text
 
@@ -13,6 +17,49 @@ from watchflow.config.models import Config
 from watchflow.detection.detector import ProjectDetection
 from watchflow.detection.tools import ToolInfo
 from watchflow.ui.themes import Icons, Themes
+
+
+def _setup_windows_utf8() -> None:
+    """Configure Windows console to use UTF-8 encoding for proper emoji display."""
+    if sys.platform == "win32":
+        try:
+            # Reconfigure stdout and stderr to use UTF-8
+            if hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            if hasattr(sys.stderr, "reconfigure"):
+                sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # If reconfiguration fails, silently continue
+            pass
+
+
+# Apply UTF-8 configuration on module load
+_setup_windows_utf8()
+
+
+class CommandSpinnerContext:
+    """Context for managing command spinner state."""
+
+    def __init__(self, spinner: Spinner, command_name: str):
+        """Initialize spinner context.
+
+        Args:
+            spinner: Rich spinner object
+            command_name: Name of the command
+        """
+        self.spinner = spinner
+        self.command_name = command_name
+        self._live: Optional[Live] = None
+
+    def update(self, message: str) -> None:
+        """Update spinner message.
+
+        Args:
+            message: New status message
+        """
+        self.spinner.text = f" {self.command_name}: {message}"
+        if self._live:
+            self._live.refresh()
 
 
 class UIRenderer:
@@ -208,6 +255,32 @@ class UIRenderer:
         """
         icon = Icons.get("play", self.theme)
         self.console.print(f"  {icon} Running: [command]{command_name}[/]")
+
+    @contextmanager
+    def command_spinner(
+        self, command_name: str
+    ) -> Generator["CommandSpinnerContext", None, None]:
+        """Create a spinner context for long-running commands.
+
+        Args:
+            command_name: Name of command
+
+        Yields:
+            CommandSpinnerContext for updating spinner status
+        """
+        icon = Icons.get("play", self.theme)
+        spinner = Spinner("dots", text=f" Running: {command_name}")
+
+        ctx = CommandSpinnerContext(spinner, command_name)
+
+        if self.theme.use_panels:
+            with Live(spinner, console=self.console, refresh_per_second=10) as live:
+                ctx._live = live
+                yield ctx
+        else:
+            # For minimal themes, just print start message and yield
+            self.console.print(f"  {icon} Running: [command]{command_name}[/]")
+            yield ctx
 
     def print_command_success(self, command_name: str, duration: float) -> None:
         """Print command success message.
